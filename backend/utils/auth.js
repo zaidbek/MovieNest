@@ -34,10 +34,16 @@ function verifyToken(token) {
 
 function cookieOptions() {
   const isProd = process.env.NODE_ENV === "production";
+  // Фронтенд (GitHub Pages) и бэкенд (Render/Railway/…) в проде живут на
+  // РАЗНЫХ доменах — это межсайтовый (cross-site) запрос. Браузер отправляет
+  // cookie в таком запросе, только если sameSite: "none" (и обязательно
+  // secure: true — без этого браузер такую cookie просто отбросит).
+  // Локально (dev) фронтенд и бэкенд общаются через Vite-прокси на одном
+  // origin, поэтому там достаточно и безопаснее "lax".
   return {
     httpOnly: true, // недоступна для JS в браузере — защита от кражи токена через XSS
-    secure: isProd, // только по HTTPS в проде
-    sameSite: "lax", // базовая защита от CSRF, но не блокирует обычную навигацию
+    secure: isProd, // только по HTTPS в проде (обязательно вместе с sameSite: none)
+    sameSite: isProd ? "none" : "lax",
     maxAge: TOKEN_TTL_MS,
     path: "/",
   };

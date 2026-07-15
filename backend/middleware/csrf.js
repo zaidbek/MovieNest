@@ -13,12 +13,13 @@ const CSRF_HEADER = "x-xsrf-token";
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
 function ensureCsrfCookie(req, res, next) {
+  const isProd = process.env.NODE_ENV === "production";
   if (!req.cookies || !req.cookies[CSRF_COOKIE]) {
     const token = crypto.randomBytes(24).toString("hex");
     res.cookie(CSRF_COOKIE, token, {
       httpOnly: false, // должен быть читаем на фронтенде
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
+      sameSite: isProd ? "none" : "lax", // прод: фронтенд и бэкенд на разных доменах
+      secure: isProd,
       path: "/",
     });
     req.csrfToken = token;

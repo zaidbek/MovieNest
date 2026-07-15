@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <title>MovieNest</title>
+    <script type="text/javascript">
+      // GitHub Pages не умеет отдавать index.html на произвольные пути —
+      // при заходе на /movie/foo или обновлении такой страницы отдаёт 404.
+      // Этот скрипт запоминает путь в query-строке и редиректит на корень
+      // сайта, а index.html (см. ниже) восстанавливает исходный URL —
+      // тогда React Router уже сам показывает нужную страницу.
+      // https://github.com/rafgraham/spa-github-pages
+      var pathSegmentsToKeep = 1; // /MovieNest-/... — 1 сегмент = имя репозитория
+
+      var l = window.location;
+      l.replace(
+        l.protocol + "//" + l.hostname + (l.port ? ":" + l.port : "") +
+        l.pathname.split("/").slice(0, 1 + pathSegmentsToKeep).join("/") + "/?/" +
+        l.pathname.slice(1).split("/").slice(pathSegmentsToKeep).join("/").replace(/&/g, "~and~") +
+        (l.search ? "&" + l.search.slice(1).replace(/&/g, "~and~") : "") +
+        l.hash
+      );
+    </script>
+  </head>
+  <body></body>
+</html>
