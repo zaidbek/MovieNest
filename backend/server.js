@@ -86,6 +86,23 @@ app.use(
 app.use(express.json({ limit: "200kb" }));
 app.use(cookieParser());
 app.use(ensureCsrfCookie);
+
+// GET /api/csrf-token — отдаёт CSRF-токен в теле JSON-ответа.
+// Зачем это нужно: cookie XSRF-TOKEN устанавливается на домене backend'а
+// (onrender.com). Frontend живёт на ДРУГОМ домене (github.io) — а
+// document.cookie в браузере может прочитать только cookie СВОЕГО домена,
+// чужие ему в принципе не видны (это не CORS, а изоляция cookie по домену).
+// Поэтому раньше frontend никогда не мог прочитать этот токен и любой
+// POST/PUT/DELETE-запрос получал 403 "Недействительный CSRF-токен".
+// Теперь frontend получает значение токена явно, в теле этого ответа
+// (см. frontend/src/api/client.js), и присылает его обратно в заголовке
+// X-XSRF-TOKEN — а сверяется он всё так же с cookie, которая браузер сам
+// прикрепляет к каждому запросу на backend (это работает независимо от
+// того, может ли JS её прочитать).
+app.get("/api/csrf-token", (req, res) => {
+  res.json({ csrfToken: req.csrfToken });
+});
+
 app.use(verifyCsrf);
 app.use(apiLimiter);
 
