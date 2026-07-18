@@ -4,7 +4,16 @@
 //   CSRF-токен из читаемой cookie XSRF-TOKEN в заголовок X-XSRF-TOKEN
 //   (double-submit cookie защита, см. backend/middleware/csrf.js).
 
-const API_ROOT = "https://movienest-5gu8.onrender.com/api" || "/api";
+// Берём адрес backend'а из переменной окружения VITE_API_ROOT (задаётся в
+// GitHub → Settings → Secrets and variables → Actions → Variables, см.
+// .github/workflows/deploy-pages.yml). Если переменная не задана (например,
+// её забыли настроить), в проде используется резервный адрес — чтобы сайт
+// не переставал работать из-за забытой настройки. В dev-режиме (`npm run
+// dev`) используется относительный "/api", который Vite проксирует на
+// локальный backend (см. vite.config.js).
+const FALLBACK_PROD_API_ROOT = "https://movienest-5gu8.onrender.com/api";
+const API_ROOT =
+  import.meta.env.VITE_API_ROOT || (import.meta.env.PROD ? FALLBACK_PROD_API_ROOT : "/api");
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
 function getCookie(name) {

@@ -20,8 +20,29 @@ const { ensureCsrfCookie, verifyCsrf } = require("./middleware/csrf");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || "http://localhost:5173";
 const isProd = process.env.NODE_ENV === "production";
+
+// CLIENT_ORIGIN задаётся в Render Dashboard → Environment (см. render.yaml,
+// там sync: false — значение вводится вручную). Известный адрес фронтенда
+// на GitHub Pages добавлен как резервный вариант: если переменную забыли
+// задать или в ней опечатка (например, лишний "/" на конце), сайт всё равно
+// не сломается полностью из-за CORS. Можно передать несколько адресов через
+// запятую в CLIENT_ORIGIN, если понадобится (например, свой домен + Pages).
+const DEFAULT_CLIENT_ORIGIN = "http://localhost:5173";
+const FALLBACK_CLIENT_ORIGINS = ["https://zaidbek.github.io"];
+
+function stripTrailingSlash(value) {
+  return String(value || "").trim().replace(/\/+$/, "");
+}
+
+const allowedOrigins = new Set(
+  [
+    ...String(process.env.CLIENT_ORIGIN || DEFAULT_CLIENT_ORIGIN).split(","),
+    ...FALLBACK_CLIENT_ORIGINS,
+  ]
+    .map(stripTrailingSlash)
+    .filter(Boolean)
+);
 
 // Мы читаем куки (JWT-токен) — приложение работает за прокси (Vite/Nginx),
 // это нужно, чтобы secure-cookie и req.ip определялись корректно.
@@ -50,7 +71,14 @@ app.use(
 
 app.use(
   cors({
-    origin: CLIENT_ORIGIN,
+    origin(origin, callback) {
+      // origin отсутствует у запросов не из браузера (curl, health-check
+      // Render'а и т.п.) — их разрешаем, credentials там не участвуют.
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.has(stripTrailingSlash(origin))) return callback(null, true);
+      console.warn(`CORS: запрос с неразрешённого origin "${origin}" отклонён`);
+      return callback(null, false);
+    },
     credentials: true, // разрешаем отправку cookie между фронтендом и бэкендом
   })
 );
