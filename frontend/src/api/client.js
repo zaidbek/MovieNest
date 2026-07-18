@@ -4,7 +4,7 @@
 //   CSRF-токен из читаемой cookie XSRF-TOKEN в заголовок X-XSRF-TOKEN
 //   (double-submit cookie защита, см. backend/middleware/csrf.js).
 
-const API_ROOT = import.meta.env.VITE_API_ROOT || "/api";
+const API_ROOT = "https://movienest-5gu8.onrender.com/api" || "/api";
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
 function getCookie(name) {
