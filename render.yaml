@@ -14,3 +14,6 @@ services:
       - key: CLIENT_ORIGIN
         sync: false # задайте вручную в Render Dashboard, например:
         # https://<ваш-github-username>.github.io
+      - key: MONGODB_URI
+        sync: false # задайте вручную в Render Dashboard — строка подключения
+        # к вашему бесплатному кластеру MongoDB Atlas, см. DEPLOY.md

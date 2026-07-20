@@ -8,8 +8,8 @@ const commentsRepo = require("../store/commentsRepo");
 const router = express.Router();
 
 // GET /api/comments/:movieId — публичный список комментариев
-router.get("/:movieId", optionalAuth, (req, res) => {
-  const comments = commentsRepo.listForMovie(String(req.params.movieId));
+router.get("/:movieId", optionalAuth, async (req, res) => {
+  const comments = await commentsRepo.listForMovie(String(req.params.movieId));
   res.json(comments);
 });
 

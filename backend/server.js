@@ -14,6 +14,7 @@ const commentsRouter = require("./routes/comments");
 const challengesRouter = require("./routes/challenges");
 const adminRouter = require("./routes/admin");
 const usersRepo = require("./store/usersRepo");
+const { connect, ensureIndexes } = require("./store/db");
 
 const { apiLimiter } = require("./middleware/rateLimiters");
 const { ensureCsrfCookie, verifyCsrf } = require("./middleware/csrf");
@@ -164,10 +165,25 @@ app.use((err, req, res, next) => {
 // базе данных — на случай, если он регистрировался раньше или роль была
 // изменена вручную. Если такой аккаунт ещё не зарегистрирован — ничего не
 // произойдёт, роль будет выдана автоматически при регистрации/входе.
-usersRepo
-  .ensureSuperAdminRole()
-  .catch((err) => console.error("Не удалось проверить роль Super Admin при старте:", err));
+//
+// ВАЖНО: сервер начинает принимать запросы только ПОСЛЕ того, как соединение
+// с MongoDB установлено и индексы проверены — так любой ранний запрос не
+// столкнётся с ещё не готовой базой данных, а если MONGODB_URI не задан или
+// недоступен, это будет видно сразу в логах при старте, а не как загадочная
+// ошибка 500 на каком-то случайном запросе позже.
+async function start() {
+  try {
+    await connect();
+    await ensureIndexes();
+    await usersRepo.ensureSuperAdminRole();
+  } catch (err) {
+    console.error("❌ Не удалось подключиться к MongoDB при старте сервера:", err.message);
+    console.error("   Проверьте переменную окружения MONGODB_URI (см. backend/.env.example).");
+  }
 
-app.listen(PORT, () => {
-  console.log(`🎬 MovieNest API запущен на http://localhost:${PORT}`);
-});
+  app.listen(PORT, () => {
+    console.log(`🎬 MovieNest API запущен на http://localhost:${PORT}`);
+  });
+}
+
+start();

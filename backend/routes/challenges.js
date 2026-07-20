@@ -6,9 +6,9 @@ const challengesRepo = require("../store/challengesRepo");
 const router = express.Router();
 
 // GET /api/challenges/me — список всех челленджей с прогрессом текущего пользователя.
-router.get("/me", requireAuth, (req, res) => {
-  const stats = statsRepo.computeStats(req.user.id);
-  res.json(challengesRepo.challengesWithProgress(req.user.id, stats));
+router.get("/me", requireAuth, async (req, res) => {
+  const stats = await statsRepo.computeStats(req.user.id);
+  res.json(await challengesRepo.challengesWithProgress(req.user.id, stats));
 });
 
 module.exports = router;

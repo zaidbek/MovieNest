@@ -30,107 +30,132 @@ router.use(requireAuth, requireAdmin);
 // Раздел "Статистика пользователей": список всех пользователей с количеством
 // просмотренных фильмов/мультфильмов/дорам, временем на сайте, датами
 // регистрации и последнего входа. Поддерживает поиск по email.
-router.get("/users", (req, res) => {
-  const search = String(req.query.search || "").trim().toLowerCase();
-  const page = Math.max(1, parseInt(req.query.page, 10) || 1);
-  const pageSize = Math.min(100, Math.max(1, parseInt(req.query.pageSize, 10) || 20));
+router.get("/users", async (req, res) => {
+  try {
+    const search = String(req.query.search || "").trim().toLowerCase();
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const pageSize = Math.min(100, Math.max(1, parseInt(req.query.pageSize, 10) || 20));
 
-  let users = usersRepo.allUsers();
-  if (search) {
-    users = users.filter((u) => u.email.toLowerCase().includes(search));
+    let users = await usersRepo.allUsers();
+    if (search) {
+      users = users.filter((u) => u.email.toLowerCase().includes(search));
+    }
+
+    const total = users.length;
+    const start = (page - 1) * pageSize;
+    const pageUsers = users.slice(start, start + pageSize);
+
+    const rows = await Promise.all(
+      pageUsers.map(async (u) => {
+        const stats = await statsRepo.computeStats(u.id);
+        const lp = levelProgress(stats.xp);
+        return {
+          id: u.id,
+          email: u.email,
+          role: u.role,
+          avatarSeed: u.avatarSeed,
+          createdAt: u.createdAt,
+          lastLoginAt: u.lastLoginAt,
+          loginStreak: u.loginStreak,
+          moviesWatched: stats.moviesWatched,
+          cartoonsWatched: stats.cartoonsWatched,
+          doramasWatched: stats.doramasWatched,
+          totalWatched: stats.totalWatched,
+          timeSpentSeconds: stats.totalWatchedSeconds,
+          level: lp.level,
+          xp: stats.xp,
+          challengesCompleted: stats.challengesCompleted,
+        };
+      })
+    );
+
+    res.json({ total, page, pageSize, users: rows });
+  } catch (err) {
+    console.error("Ошибка загрузки списка пользователей:", err);
+    res.status(500).json({ message: "Не удалось загрузить список пользователей" });
   }
-
-  const total = users.length;
-  const start = (page - 1) * pageSize;
-  const pageUsers = users.slice(start, start + pageSize);
-
-  const rows = pageUsers.map((u) => {
-    const stats = statsRepo.computeStats(u.id);
-    const lp = levelProgress(stats.xp);
-    return {
-      id: u.id,
-      email: u.email,
-      role: u.role,
-      avatarSeed: u.avatarSeed,
-      createdAt: u.createdAt,
-      lastLoginAt: u.lastLoginAt,
-      loginStreak: u.loginStreak,
-      moviesWatched: stats.moviesWatched,
-      cartoonsWatched: stats.cartoonsWatched,
-      doramasWatched: stats.doramasWatched,
-      totalWatched: stats.totalWatched,
-      timeSpentSeconds: stats.totalWatchedSeconds,
-      level: lp.level,
-      xp: stats.xp,
-      challengesCompleted: stats.challengesCompleted,
-    };
-  });
-
-  res.json({ total, page, pageSize, users: rows });
 });
 
 // GET /api/admin/users/:id — детальная карточка пользователя для админки:
 // процент просмотра каждого фильма, последние действия, достижения, челленджи.
-router.get("/users/:id", (req, res) => {
-  const user = usersRepo.findById(req.params.id);
-  if (!user) return res.status(404).json({ message: "Пользователь не найден" });
+router.get("/users/:id", async (req, res) => {
+  try {
+    const user = await usersRepo.findById(req.params.id);
+    if (!user) return res.status(404).json({ message: "Пользователь не найден" });
 
-  const stats = statsRepo.computeStats(user.id);
-  const lp = levelProgress(stats.xp);
-  const movies = moviesById();
+    const stats = await statsRepo.computeStats(user.id);
+    const lp = levelProgress(stats.xp);
+    const movies = moviesById();
 
-  const watchHistory = watchProgressRepo.allForUser(user.id).map((h) => ({
-    movieId: h.movieId,
-    title: movies.get(h.movieId)?.title || "Неизвестный фильм",
-    type: h.movieType,
-    percent: h.percent,
-    completed: h.completed,
-    watchedSeconds: Math.round(h.watchedSeconds),
-    durationSeconds: h.durationSeconds,
-    updatedAt: h.updatedAt,
-  }));
+    const rawWatchHistory = await watchProgressRepo.allForUser(user.id);
+    const watchHistory = rawWatchHistory.map((h) => ({
+      movieId: h.movieId,
+      title: movies.get(h.movieId)?.title || "Неизвестный фильм",
+      type: h.movieType,
+      percent: h.percent,
+      completed: h.completed,
+      watchedSeconds: Math.round(h.watchedSeconds),
+      durationSeconds: h.durationSeconds,
+      updatedAt: h.updatedAt,
+    }));
 
-  const recentXp = xpRepo.recentForUser(user.id, 15);
-  const recentActions = [
-    ...watchHistory.map((h) => ({
-      type: "watch",
-      label: `${h.completed ? "Досмотрел" : "Смотрит"} «${h.title}» (${h.percent}%)`,
-      at: h.updatedAt,
-    })),
-    ...recentXp.map((x) => ({ type: "xp", label: `+${x.amount} XP (${x.reason})`, at: x.createdAt })),
-  ]
-    .sort((a, b) => b.at.localeCompare(a.at))
-    .slice(0, 20);
+    const [recentXp, achievements, challenges, loginHistory] = await Promise.all([
+      xpRepo.recentForUser(user.id, 15),
+      achievementsRepo.achievementsWithStatus(user.id, stats),
+      challengesRepo.challengesWithProgress(user.id, stats),
+      dailyLoginRepo.historyForUser(user.id),
+    ]);
 
-  res.json({
-    user: usersRepo.publicUser(user),
-    stats: { ...stats, ...lp },
-    achievements: achievementsRepo.achievementsWithStatus(user.id, stats),
-    challenges: challengesRepo.challengesWithProgress(user.id, stats),
-    watchHistory,
-    loginHistory: dailyLoginRepo.historyForUser(user.id),
-    recentActions,
-  });
+    const recentActions = [
+      ...watchHistory.map((h) => ({
+        type: "watch",
+        label: `${h.completed ? "Досмотрел" : "Смотрит"} «${h.title}» (${h.percent}%)`,
+        at: h.updatedAt,
+      })),
+      ...recentXp.map((x) => ({ type: "xp", label: `+${x.amount} XP (${x.reason})`, at: x.createdAt })),
+    ]
+      .sort((a, b) => b.at.localeCompare(a.at))
+      .slice(0, 20);
+
+    res.json({
+      user: usersRepo.publicUser(user),
+      stats: { ...stats, ...lp },
+      achievements,
+      challenges,
+      watchHistory,
+      loginHistory,
+      recentActions,
+    });
+  } catch (err) {
+    console.error("Ошибка загрузки карточки пользователя:", err);
+    res.status(500).json({ message: "Не удалось загрузить данные пользователя" });
+  }
 });
 
 // ── Управление ролями (только Super Admin) ─────────────────────────────────
 // Всё, что ниже, дополнительно защищено requireSuperAdmin: доступ только для
 // пользователя с ролью "superadmin" (единственный владелец — email
 // захардкожен в backend/config/roles.js). Роли хранятся в базе данных
-// (backend/data/users.json), поэтому назначать/снимать администраторов можно
+// (MongoDB, коллекция users), поэтому назначать/снимать администраторов можно
 // прямо через сайт — без изменения исходного кода и без повторной публикации
 // проекта в GitHub.
 
 // GET /api/admin/admins — список всех администраторов и Super Admin'а.
-router.get("/admins", requireSuperAdmin, (req, res) => {
-  const admins = usersRepo.allAdmins().map((u) => usersRepo.publicUser(u));
-  res.json({ admins });
+router.get("/admins", requireSuperAdmin, async (req, res) => {
+  try {
+    const all = await usersRepo.allAdmins();
+    const admins = all.map((u) => usersRepo.publicUser(u));
+    res.json({ admins });
+  } catch (err) {
+    console.error("Ошибка загрузки списка администраторов:", err);
+    res.status(500).json({ message: "Не удалось загрузить список администраторов" });
+  }
 });
 
 // POST /api/admin/users/:id/promote — назначить пользователя администратором.
 router.post("/users/:id/promote", requireSuperAdmin, async (req, res) => {
   try {
-    const target = usersRepo.findById(req.params.id);
+    const target = await usersRepo.findById(req.params.id);
     if (!target) return res.status(404).json({ message: "Пользователь не найден" });
 
     if (isSuperAdminEmail(target.email)) {
@@ -151,7 +176,7 @@ router.post("/users/:id/promote", requireSuperAdmin, async (req, res) => {
 // POST /api/admin/users/:id/demote — снять права администратора.
 router.post("/users/:id/demote", requireSuperAdmin, async (req, res) => {
   try {
-    const target = usersRepo.findById(req.params.id);
+    const target = await usersRepo.findById(req.params.id);
     if (!target) return res.status(404).json({ message: "Пользователь не найден" });
 
     if (isSuperAdminEmail(target.email)) {
@@ -176,7 +201,7 @@ router.post("/users/by-email/promote", requireSuperAdmin, async (req, res) => {
     const email = String(req.body?.email || "").trim().toLowerCase();
     if (!email) return res.status(400).json({ message: "Укажите email" });
 
-    const target = usersRepo.findByEmail(email);
+    const target = await usersRepo.findByEmail(email);
     if (!target) return res.status(404).json({ message: "Пользователь с таким email не найден" });
 
     if (isSuperAdminEmail(target.email)) {

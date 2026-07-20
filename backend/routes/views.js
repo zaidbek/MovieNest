@@ -74,16 +74,16 @@ router.post("/:movieId/heartbeat", requireAuth, async (req, res) => {
 });
 
 // GET /api/views/:movieId
-router.get("/:movieId", requireAuth, (req, res) => {
-  const progress = watchProgressRepo.progressForUser(req.user.id, req.params.movieId);
+router.get("/:movieId", requireAuth, async (req, res) => {
+  const progress = await watchProgressRepo.progressForUser(req.user.id, req.params.movieId);
   res.json(
     progress || { watchedSeconds: 0, percent: 0, completed: false, milestonesReached: [] }
   );
 });
 
 // GET /api/views/me
-router.get("/me", requireAuth, (req, res) => {
-  res.json({ totalViews: watchProgressRepo.countCompletedForUser(req.user.id) });
+router.get("/me", requireAuth, async (req, res) => {
+  res.json({ totalViews: await watchProgressRepo.countCompletedForUser(req.user.id) });
 });
 
 module.exports = router;

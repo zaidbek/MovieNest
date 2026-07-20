@@ -1,10 +1,6 @@
-const path = require("path");
-const { readJSON } = require("./jsonStore");
+const { getCollection } = require("./db");
 const usersRepo = require("./usersRepo");
 const { levelForXp } = require("./gamification");
-
-const WATCH_HISTORY_FILE = path.join(__dirname, "..", "data", "watch_history.json");
-const USER_CHALLENGES_FILE = path.join(__dirname, "..", "data", "user_challenges.json");
 
 /**
  * Единая точка агрегации статистики пользователя — используется для проверки
@@ -12,12 +8,16 @@ const USER_CHALLENGES_FILE = path.join(__dirname, "..", "data", "user_challenges
  * Считает только ЗАВЕРШЁННЫЕ (100%) просмотры — досмотренное до конца видео,
  * прогресс которого прошёл проверку на сервере (см. watchProgressRepo.js).
  */
-function computeStats(userId) {
-  const user = usersRepo.findById(userId);
-  const history = readJSON(WATCH_HISTORY_FILE, []);
-  const userChallenges = readJSON(USER_CHALLENGES_FILE, []);
+async function computeStats(userId) {
+  const watchCol = await getCollection("watch_history");
+  const challengesCol = await getCollection("user_challenges");
 
-  const mine = history.filter((h) => h.userId === userId);
+  const [user, mine, challengesCompleted] = await Promise.all([
+    usersRepo.findById(userId),
+    watchCol.find({ userId }).toArray(),
+    challengesCol.countDocuments({ userId, completed: true }),
+  ]);
+
   const completed = mine.filter((h) => h.completed);
 
   const moviesWatched = completed.filter((h) => h.movieType === "movie").length;
@@ -32,8 +32,6 @@ function computeStats(userId) {
 
   const xp = user?.xp || 0;
   const level = levelForXp(xp);
-
-  const challengesCompleted = userChallenges.filter((c) => c.userId === userId && c.completed).length;
 
   return {
     userId,

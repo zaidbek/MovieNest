@@ -1,13 +1,14 @@
-const path = require("path");
-const { readJSON, enqueueMutation } = require("./jsonStore");
+const { getCollection } = require("./db");
 const usersRepo = require("./usersRepo");
 const xpRepo = require("./xpRepo");
 const { XP_REWARDS } = require("./gamification");
 
-const FILE = path.join(__dirname, "..", "data", "daily_login.json");
+async function dailyCol() {
+  return getCollection("daily_login");
+}
 
 /**
- * Регистрирует вход пользователя за сегодня (таблица daily_login), обновляет
+ * Регистрирует вход пользователя за сегодня (коллекция daily_login), обновляет
  * стрик посещений (users.loginStreak) и начисляет ежедневный XP-бонус —
  * но не более одного раза за календарные сутки.
  */
@@ -18,20 +19,24 @@ async function recordDailyLogin(userId) {
 
   if (isNewDay) {
     const today = new Date().toISOString().slice(0, 10);
-    await enqueueMutation(FILE, (rows) => {
-      const already = rows.some((r) => r.userId === userId && r.date === today);
-      if (already) return { data: rows };
-      return { data: [...rows, { userId, date: today, createdAt: new Date().toISOString() }] };
-    });
-    await xpRepo.awardXp(userId, XP_REWARDS.dailyLogin, "daily_login");
+    const col = await dailyCol();
+    try {
+      await col.insertOne({ userId, date: today, createdAt: new Date().toISOString() });
+      await xpRepo.awardXp(userId, XP_REWARDS.dailyLogin, "daily_login");
+    } catch (err) {
+      // Уникальный индекс {userId, date} — если запись за сегодня уже есть
+      // (например, два одновременных запроса при входе), просто не начисляем повторно.
+      if (!err || err.code !== 11000) throw err;
+    }
   }
 
   return { isNewDay, streak: loginResult.user.loginStreak };
 }
 
-function historyForUser(userId) {
-  const rows = readJSON(FILE, []);
-  return rows.filter((r) => r.userId === userId).sort((a, b) => a.date.localeCompare(b.date));
+async function historyForUser(userId) {
+  const col = await dailyCol();
+  const rows = await col.find({ userId }).toArray();
+  return rows.sort((a, b) => a.date.localeCompare(b.date));
 }
 
 module.exports = { recordDailyLogin, historyForUser };

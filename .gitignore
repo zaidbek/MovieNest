@@ -29,11 +29,15 @@ pnpm-debug.log*
 *.log
 logs/
 
-# runtime user data — contains real emails, password hashes and personal
-# activity, must never be pushed to a public repo. The backend recreates
-# these files automatically on first write if they're missing, so removing
-# them from git does not break the app. backend/data/movies.json is the
-# site's movie catalog (not user data) and stays tracked.
+# runtime user data — легаси от старой JSON-файловой версии хранилища.
+# Пользовательские данные (аккаунты, XP, лидерборд, достижения, челленджи,
+# комментарии, прогресс просмотра, ежедневные входы) теперь хранятся в
+# MongoDB (см. backend/store/db.js и DEPLOY.md), эти файлы больше не
+# читаются и не пишутся сервером. Оставлены в .gitignore на случай, если
+# где-то ещё лежат старые копии — чтобы случайно не закоммитить в публичный
+# репозиторий email'ы, хеши паролей и личную активность пользователей.
+# backend/data/movies.json — это каталог фильмов (не пользовательские данные)
+# и остаётся единственным файлом, который сервер всё ещё читает/пишет напрямую.
 backend/data/users.json
 backend/data/comments.json
 backend/data/leaderboard.json

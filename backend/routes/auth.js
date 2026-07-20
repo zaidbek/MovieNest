@@ -38,7 +38,7 @@ router.post("/register", authLimiter, registerValidators, handleValidation, asyn
   try {
     const { email, password, ref } = req.body;
     const passwordHash = await hashPassword(password);
-    const referrer = ref ? usersRepo.findByReferralCode(String(ref)) : null;
+    const referrer = ref ? await usersRepo.findByReferralCode(String(ref)) : null;
     const user = await usersRepo.createUser({ email, passwordHash, referredBy: referrer?.id || null });
     if (referrer) {
       await usersRepo.incrementReferrals(referrer.id);
@@ -48,7 +48,8 @@ router.post("/register", authLimiter, registerValidators, handleValidation, asyn
     await dailyLoginRepo.recordDailyLogin(user.id);
     const token = signToken({ sub: user.id });
     setAuthCookie(res, token);
-    res.status(201).json({ user: usersRepo.publicUser(usersRepo.findById(user.id)) });
+    const freshUser = await usersRepo.findById(user.id);
+    res.status(201).json({ user: usersRepo.publicUser(freshUser) });
   } catch (err) {
     if (err.message === "EMAIL_TAKEN") {
       return res.status(409).json({ message: "Пользователь с таким Email уже зарегистрирован" });
@@ -62,7 +63,7 @@ router.post("/register", authLimiter, registerValidators, handleValidation, asyn
 router.post("/login", authLimiter, loginValidators, handleValidation, async (req, res) => {
   try {
     const { email, password } = req.body;
-    const user = usersRepo.findByEmail(email);
+    const user = await usersRepo.findByEmail(email);
 
     // Намеренно одинаковое сообщение об ошибке для "нет пользователя" и
     // "неверный пароль" — чтобы не раскрывать, какие email зарегистрированы.
@@ -86,7 +87,8 @@ router.post("/login", authLimiter, loginValidators, handleValidation, async (req
     await dailyLoginRepo.recordDailyLogin(user.id);
     const token = signToken({ sub: user.id });
     setAuthCookie(res, token);
-    res.json({ user: usersRepo.publicUser(usersRepo.findById(user.id)) });
+    const freshUser = await usersRepo.findById(user.id);
+    res.json({ user: usersRepo.publicUser(freshUser) });
   } catch (err) {
     console.error("Ошибка входа:", err);
     res.status(500).json({ message: "Не удалось войти. Попробуйте позже." });

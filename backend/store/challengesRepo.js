@@ -1,21 +1,22 @@
-const path = require("path");
-const { readJSON, enqueueMutation } = require("./jsonStore");
+const { getCollection } = require("./db");
 const { CHALLENGES } = require("./gamification");
 const xpRepo = require("./xpRepo");
 
-const FILE = path.join(__dirname, "..", "data", "user_challenges.json");
+async function challengesCol() {
+  return getCollection("user_challenges");
+}
 
-function progressRowsForUser(userId) {
-  const rows = readJSON(FILE, []);
-  return rows.filter((r) => r.userId === userId);
+async function progressRowsForUser(userId) {
+  const col = await challengesCol();
+  return col.find({ userId }).toArray();
 }
 
 /**
  * Возвращает список всех челленджей с текущим прогрессом пользователя —
  * используется страницей "Задания" на фронтенде.
  */
-function challengesWithProgress(userId, stats) {
-  const rows = progressRowsForUser(userId);
+async function challengesWithProgress(userId, stats) {
+  const rows = await progressRowsForUser(userId);
   return CHALLENGES.map((c) => {
     const row = rows.find((r) => r.challengeId === c.id);
     const progress = Math.min(stats[c.metric] || 0, c.target);
@@ -42,34 +43,42 @@ function challengesWithProgress(userId, stats) {
  * выполнения условия.
  */
 async function evaluateChallenges(userId, stats) {
+  const col = await challengesCol();
   const completedNow = [];
+
   for (const c of CHALLENGES) {
     const value = stats[c.metric] || 0;
     if (value < c.target) continue;
 
-    const result = await enqueueMutation(FILE, (rows) => {
-      const idx = rows.findIndex((r) => r.userId === userId && r.challengeId === c.id);
-      if (idx !== -1 && rows[idx].completed) {
-        return { data: rows, returnValue: { alreadyCompleted: true } };
-      }
-      const row = {
-        userId,
-        challengeId: c.id,
-        progress: c.target,
-        target: c.target,
-        completed: true,
-        completedAt: new Date().toISOString(),
-      };
-      const next = [...rows];
-      if (idx === -1) next.push(row); else next[idx] = row;
-      return { data: next, returnValue: { alreadyCompleted: false } };
-    });
+    const existing = await col.findOne({ userId, challengeId: c.id });
+    if (existing && existing.completed) continue;
 
-    if (!result.alreadyCompleted) {
-      await xpRepo.awardXp(userId, c.rewardXp, `challenge:${c.id}`);
-      completedNow.push(c);
+    const row = {
+      userId,
+      challengeId: c.id,
+      progress: c.target,
+      target: c.target,
+      completed: true,
+      completedAt: new Date().toISOString(),
+    };
+
+    try {
+      await col.updateOne(
+        { userId, challengeId: c.id },
+        { $set: row },
+        { upsert: true }
+      );
+    } catch (err) {
+      // Гонка одновременных запросов — уникальный индекс {userId, challengeId}
+      // не даёт задвоить строку, продолжаем как будто уже отмечено выполненным.
+      if (!err || err.code !== 11000) throw err;
+      continue;
     }
+
+    await xpRepo.awardXp(userId, c.rewardXp, `challenge:${c.id}`);
+    completedNow.push(c);
   }
+
   return completedNow;
 }
 

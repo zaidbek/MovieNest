@@ -13,13 +13,12 @@ const router = express.Router();
 
 // GET /api/users/me — полный профиль текущего пользователя: XP, уровень,
 // достижения, прогресс по челленджам, избранное и историю начислений.
-router.get("/me", requireAuth, (req, res) => {
-  const stats = statsRepo.computeStats(req.user.id);
-  const achievements = achievementsRepo.achievementsWithStatus(req.user.id, stats);
-  const challenges = challengesRepo.challengesWithProgress(req.user.id, stats);
-  const xpHistory = xpRepo.recentForUser(req.user.id, 10);
-  const inProgress = watchProgressRepo
-    .allForUser(req.user.id)
+router.get("/me", requireAuth, async (req, res) => {
+  const stats = await statsRepo.computeStats(req.user.id);
+  const achievements = await achievementsRepo.achievementsWithStatus(req.user.id, stats);
+  const challenges = await challengesRepo.challengesWithProgress(req.user.id, stats);
+  const xpHistory = await xpRepo.recentForUser(req.user.id, 10);
+  const inProgress = (await watchProgressRepo.allForUser(req.user.id))
     .filter((h) => !h.completed && h.watchedSeconds > 0);
 
   res.json({
